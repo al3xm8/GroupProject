@@ -3,6 +3,7 @@ package com.example.groupproject
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -13,8 +14,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
@@ -62,7 +65,7 @@ class ToDoList : AppCompatActivity() {
         dateTV.text = getDate()
 
         recyclerView.layoutManager = LinearLayoutManager(this)
-        adapter = ToDoAdapter(toDoItems, this, { saveTasks(getDate(), it) }, { updateProgress() })
+        adapter = ToDoAdapter(toDoItems, this, { saveTasks(getDate(), it) }, { updateProgress() }, { deleteFromFirebase(getDate(), it) })
         recyclerView.adapter = adapter
 
         loadTasks(getDate())
@@ -74,7 +77,7 @@ class ToDoList : AppCompatActivity() {
         updateProgress()
     }
 
-    private fun getDate() : String {
+    private fun getDate(): String {
         val year = intent.getIntExtra("year", 0)
         val month = intent.getIntExtra("month", 0)
         val day = intent.getIntExtra("day", 0)
@@ -121,6 +124,30 @@ class ToDoList : AppCompatActivity() {
             adapter.notifyDataSetChanged()
             updateProgress()  // Ensure progress is updated after loading tasks
         }
+
+        // Load special tasks from Firebase
+        val database = FirebaseDatabase.getInstance()
+        val reference = database.getReference("specialEvents").child(date)
+        reference.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(dataSnapshot: DataSnapshot) {
+                for (snapshot in dataSnapshot.children) {
+                    val item = snapshot.getValue(ToDoItem::class.java)
+                    if (item != null) {
+                        // Check if the task already exists in the toDoItems list
+                        val taskExists = toDoItems.any { it.title == item.title && it.username == item.username }
+                        if (!taskExists) {
+                            toDoItems.add(item)
+                        }
+                    }
+                }
+                adapter.notifyDataSetChanged()
+                updateProgress()
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                Log.e("ToDoList", "Error in loading special tasks from Firebase: " + databaseError)
+            }
+        })
     }
 
     private fun showInputDialog(date: String) {
@@ -137,13 +164,12 @@ class ToDoList : AppCompatActivity() {
                 val description = descriptionET.text.toString()
 
                 if (itemName.isNotEmpty()) {
-                    if (specialCB.isChecked()) {
-
-                        var firebaseDatabase : FirebaseDatabase = FirebaseDatabase.getInstance()
-                        var databaseReference : DatabaseReference = firebaseDatabase.getReference(getDate())
-                        var specialEvent : ToDoItem = ToDoItem(itemName, description)
-                        databaseReference.setValue(specialEvent)
-
+                    if (specialCB.isChecked) {
+                        val firebaseDatabase = FirebaseDatabase.getInstance()
+                        val databaseReference = firebaseDatabase.getReference("specialEvents").child(date)
+                        val key = databaseReference.push().key ?: ""
+                        val specialEvent = ToDoItem(itemName, description, username = un, isSpecial = true, key = key)
+                        databaseReference.child(key).setValue(specialEvent)
                     }
                     addItem(itemName, description, date)
                     totalItems++
@@ -156,8 +182,8 @@ class ToDoList : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun addItem(itemName: String, description: String, date: String) {
-        val item = ToDoItem(itemName, description)
+    private fun addItem(itemName: String, description: String, date: String, key: String = "") {
+        val item = ToDoItem(itemName, description, username = un, isSpecial = key.isNotEmpty(), key = key)
         toDoItems.add(item)
         recyclerView.adapter?.notifyDataSetChanged()
         saveTasks(date, toDoItems)
@@ -198,5 +224,12 @@ class ToDoList : AppCompatActivity() {
             editor.putInt("overallProgress", overallPercentage)
             editor.apply()
         }
+    }
+
+    private fun deleteFromFirebase(date: String, item: ToDoItem) {
+        Log.d("ToDoList", "Attempting to delete item from Firebase with key: ${item.key}")
+        val database = FirebaseDatabase.getInstance()
+        val reference = database.getReference("specialEvents").child(date)
+        reference.child(item.key).removeValue()
     }
 }

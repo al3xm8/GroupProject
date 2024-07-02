@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
@@ -13,7 +14,8 @@ class ToDoAdapter(
     private val toDoItems: ArrayList<ToDoItem>,
     private val context: Context,
     private val saveTasks: (ArrayList<ToDoItem>) -> Unit,
-    private val updateProgress: () -> Unit
+    private val updateProgress: () -> Unit,
+    private val deleteFromFirebase: (ToDoItem) -> Unit
 ) : RecyclerView.Adapter<ToDoAdapter.ToDoViewHolder>() {
 
     companion object {
@@ -43,8 +45,13 @@ class ToDoAdapter(
             updateProgress()  // Update progress whenever checkbox state changes
         }
 
-        holder.checkBox.setOnClickListener {
-            checkedItems++
+        holder.removeBT.setOnClickListener {
+            if (toDoItem.isSpecial) {
+                deleteFromFirebase(toDoItem)
+            }
+            removeItem(pos)
+            saveTasks(toDoItems)  // Save tasks after removal
+            updateProgress()  // Update progress after removal
         }
     }
 
@@ -57,9 +64,10 @@ class ToDoAdapter(
         notifyItemInserted(toDoItems.size - 1)
     }
 
-    fun removeItem(idx: Int) {
-        toDoItems.removeAt(idx)
-        notifyItemRemoved(idx)
+    private fun removeItem(position: Int) {
+        toDoItems.removeAt(position)
+        notifyItemRemoved(position)
+        notifyItemRangeChanged(position, toDoItems.size)
     }
 
     private fun playSound(context: Context) {
@@ -74,5 +82,6 @@ class ToDoAdapter(
         val itemNameTV: TextView = itemView.findViewById(R.id.itemNameTV)
         val descriptionTV: TextView = itemView.findViewById(R.id.descriptionTV)
         val checkBox: CheckBox = itemView.findViewById(R.id.checkBox)
+        val removeBT: ImageButton = itemView.findViewById(R.id.removeBT)
     }
 }
